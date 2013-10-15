@@ -570,6 +570,11 @@ class Runner(object):
         actual_private_key_file = inject.get('ansible_ssh_private_key_file', self.private_key_file)
 
         if self.accelerate and actual_transport != 'local':
+            #Fix to get the inventory name of the host to accelerate plugin
+            if inject.get('ansible_ssh_host', None):
+                self.accelerate_inventory_host = host
+            else:
+                self.accelerate_inventory_host = None
             # if we're using accelerated mode, force the
             # transport to accelerate
             actual_transport = "accelerate"
@@ -623,7 +628,7 @@ class Runner(object):
                 # calls just to accomodate this one case
                 actual_port = [actual_port, self.accelerate_port]
             elif actual_port is not None:
-                actual_port = int(actual_port)
+                actual_port = int(template.template(self.basedir, actual_port, inject))
         except ValueError, e:
             result = dict(failed=True, msg="FAILED: Configured port \"%s\" is not a valid port, expected integer" % actual_port)
             return ReturnData(host=host, comm_ok=False, result=result)
@@ -771,6 +776,11 @@ class Runner(object):
         if result['rc'] != 0:
             if result['rc'] == 5:
                 output = 'Authentication failure.'
+            elif result['rc'] == 255 and self.transport == 'ssh':
+                if utils.VERBOSITY > 3:
+                    output = 'SSH encountered an unknown error. The output was:\n%s' % (result['stdout']+result['stderr'])
+                else:
+                    output = 'SSH encountered an unknown error during the connection. We recommend you re-run the command using -vvvv, which will enable SSH debugging output to help diagnose the issue'
             else:
                 output = 'Authentication or permission failure.  In some cases, you may have been able to authenticate and did not have permissions on the remote directory. Consider changing the remote temp path in ansible.cfg to a path rooted in "/tmp". Failed command was: %s, exited with result %d' % (cmd, result['rc'])
             if 'stdout' in result and result['stdout'] != '':
